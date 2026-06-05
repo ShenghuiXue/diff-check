@@ -258,6 +258,73 @@
       box-shadow: 0 1px 2px rgba(23, 33, 47, 0.08);
     }
 
+    .action-buttons {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .action-button {
+      min-height: 38px;
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #ffffff;
+      color: var(--text);
+      font: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+    }
+
+    .action-button:hover:not(:disabled),
+    .action-button:focus-visible {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(31, 95, 191, 0.12);
+      outline: none;
+    }
+
+    .action-button:disabled {
+      color: #99a4b7;
+      cursor: not-allowed;
+      background: #f8fafc;
+    }
+
+    #expandDiffButton {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    #expandDiffButton:hover,
+    #expandDiffButton:focus-visible,
+    #expandDiffButton.is-active {
+      border-color: var(--accent);
+      background: #dceafa;
+      color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(31, 95, 191, 0.12);
+    }
+
+    body.diff-expanded {
+      overflow: hidden;
+    }
+
+    .results.is-expanded {
+      position: fixed;
+      inset: 10px;
+      z-index: 10;
+      grid-template-rows: auto minmax(0, 1fr);
+      margin: 0;
+      padding: 16px;
+    }
+
+    .results.is-expanded .diff-output {
+      height: 100%;
+      max-height: none;
+    }
+
     .diff-output {
       border: 1px solid var(--border);
       border-radius: 14px;
@@ -541,7 +608,7 @@
       </div>
     </section>
 
-    <section class="card results">
+    <section class="card results" id="resultsPanel">
       <div class="results-top">
         <h2>Differences</h2>
         <div class="toolbar">
@@ -556,6 +623,10 @@
               <label for="viewSingleColumn">Single Column</label>
             </div>
           </fieldset>
+          <div class="action-buttons">
+            <button class="action-button" type="button" id="downloadDiffButton" disabled>Download Diff</button>
+            <button class="action-button" type="button" id="expandDiffButton" aria-pressed="false" title="Expand differences">Expand</button>
+          </div>
           <div class="stats">
             <span class="pill" id="sameCount">Unchanged: 0</span>
             <span class="pill" id="changeCount">Changed: 0</span>
@@ -579,7 +650,10 @@
     const rightMeta = document.getElementById("rightMeta");
     const leftLineNumbers = document.getElementById("leftLineNumbers");
     const rightLineNumbers = document.getElementById("rightLineNumbers");
+    const resultsPanel = document.getElementById("resultsPanel");
     const diffOutput = document.getElementById("diffOutput");
+    const downloadDiffButton = document.getElementById("downloadDiffButton");
+    const expandDiffButton = document.getElementById("expandDiffButton");
     const sameCount = document.getElementById("sameCount");
     const changeCount = document.getElementById("changeCount");
     const addCount = document.getElementById("addCount");
@@ -915,14 +989,25 @@
       }).join("");
     }
 
-    function renderDiff() {
-      updateMeta();
-
+    function getDiffRows() {
       const leftValue = leftText.value;
       const rightValue = rightText.value;
 
       if (!leftValue.trim() || !rightValue.trim()) {
+        return [];
+      }
+
+      return buildPairedRows(buildDiff(splitLines(leftValue), splitLines(rightValue)));
+    }
+
+    function renderDiff() {
+      updateMeta();
+
+      const rows = getDiffRows();
+
+      if (!rows.length) {
         diffOutput.innerHTML = '<div class="empty-state">Fill both text fields to see the diff.</div>';
+        downloadDiffButton.disabled = true;
         sameCount.textContent = "Unchanged: 0";
         changeCount.textContent = "Changed: 0";
         addCount.textContent = "Added: 0";
@@ -930,11 +1015,7 @@
         return;
       }
 
-      const leftLines = splitLines(leftValue);
-      const rightLines = splitLines(rightValue);
-      const diff = buildDiff(leftLines, rightLines);
-
-      const rows = buildPairedRows(diff);
+      downloadDiffButton.disabled = false;
       let same = 0;
       let changed = 0;
       let added = 0;
@@ -978,8 +1059,67 @@
       removeCount.textContent = `Removed: ${removed}`;
     }
 
+    function formatDiffForDownload(rows) {
+      const lines = ["--- Left Text", "+++ Right Text", "@@"];
+
+      rows.forEach((row) => {
+        if (row.kind === "same") {
+          lines.push(`  ${row.left.text}`);
+        } else if (row.kind === "change") {
+          lines.push(`- ${row.left.text}`);
+          lines.push(`+ ${row.right.text}`);
+        } else if (row.kind === "remove") {
+          lines.push(`- ${row.left.text}`);
+        } else {
+          lines.push(`+ ${row.right.text}`);
+        }
+      });
+
+      return `${lines.join("\n")}\n`;
+    }
+
+    function downloadDiff() {
+      const rows = getDiffRows();
+
+      if (!rows.length) {
+        return;
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const blob = new Blob([formatDiffForDownload(rows)], { type: "text/plain" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `text-diff-${timestamp}.diff`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+    }
+
+    function setExpandedDiff(isExpanded) {
+      resultsPanel.classList.toggle("is-expanded", isExpanded);
+      document.body.classList.toggle("diff-expanded", isExpanded);
+      expandDiffButton.textContent = isExpanded ? "Shrink" : "Expand";
+      expandDiffButton.classList.toggle("is-active", isExpanded);
+      expandDiffButton.setAttribute("aria-pressed", String(isExpanded));
+      expandDiffButton.title = isExpanded ? "Shrink differences (Esc)" : "Expand differences";
+    }
+
+    function toggleExpandedDiff() {
+      setExpandedDiff(!resultsPanel.classList.contains("is-expanded"));
+    }
+
+    function handleDocumentKeydown(event) {
+      if (event.key === "Escape" && resultsPanel.classList.contains("is-expanded")) {
+        setExpandedDiff(false);
+      }
+    }
+
     leftText.addEventListener("input", renderDiff);
     rightText.addEventListener("input", renderDiff);
+    downloadDiffButton.addEventListener("click", downloadDiff);
+    expandDiffButton.addEventListener("click", toggleExpandedDiff);
+    document.addEventListener("keydown", handleDocumentKeydown);
     leftText.addEventListener("scroll", () => syncLineNumbers(leftText, leftLineNumbers));
     rightText.addEventListener("scroll", () => syncLineNumbers(rightText, rightLineNumbers));
     viewModeInputs.forEach((input) => input.addEventListener("change", renderDiff));
