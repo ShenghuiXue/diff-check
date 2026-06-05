@@ -68,7 +68,8 @@
       margin: 0;
       color: var(--muted);
       line-height: 1.5;
-      max-width: 72ch;
+      max-width: none;
+      white-space: nowrap;
     }
 
     .editors {
@@ -137,7 +138,12 @@
       overflow: hidden;
       text-align: right;
       user-select: none;
-      white-space: pre;
+      white-space: nowrap;
+    }
+
+    .line-number-row {
+      min-height: 1.5em;
+      line-height: 1.5;
     }
 
     textarea {
@@ -152,6 +158,89 @@
       color: var(--text);
       background: #ffffff;
       outline: none;
+      overflow: auto;
+      white-space: pre;
+    }
+
+    textarea.wrap-lines {
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+    }
+
+    .input-options {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      padding: 4px 10px 2px;
+    }
+
+    .input-wrap-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 36px;
+      padding: 6px 12px 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #ffffff;
+      color: var(--text);
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .input-wrap-toggle input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .input-wrap-switch {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      border-radius: 999px;
+      background: #d7dde6;
+      transition: background-color 140ms ease;
+      flex: 0 0 auto;
+    }
+
+    .input-wrap-switch::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgba(23, 33, 47, 0.22);
+      transition: transform 140ms ease;
+    }
+
+    .input-wrap-toggle input:checked + .input-wrap-switch {
+      background: var(--accent);
+    }
+
+    .input-wrap-toggle input:checked + .input-wrap-switch::after {
+      transform: translateX(16px);
+    }
+
+    .input-wrap-toggle:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(31, 95, 191, 0.12);
+    }
+
+    .line-measure {
+      position: absolute;
+      top: -10000px;
+      left: -10000px;
+      visibility: hidden;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      word-break: normal;
     }
 
     .results {
@@ -639,7 +728,7 @@
         </div>
         <div class="editor-shell">
           <div class="line-numbers" id="leftLineNumbers" aria-hidden="true">1</div>
-          <textarea id="leftText" placeholder="Paste the original text here..." aria-label="Left text input"></textarea>
+          <textarea class="wrap-lines" id="leftText" placeholder="Paste the original text here..." aria-label="Left text input" wrap="soft" spellcheck="false"></textarea>
         </div>
       </div>
 
@@ -652,8 +741,15 @@
         </div>
         <div class="editor-shell">
           <div class="line-numbers" id="rightLineNumbers" aria-hidden="true">1</div>
-          <textarea id="rightText" placeholder="Paste the updated text here..." aria-label="Right text input"></textarea>
+          <textarea class="wrap-lines" id="rightText" placeholder="Paste the updated text here..." aria-label="Right text input" wrap="soft" spellcheck="false"></textarea>
         </div>
+      </div>
+      <div class="input-options">
+        <label class="input-wrap-toggle">
+          <input type="checkbox" id="inputWrapToggle" checked>
+          <span class="input-wrap-switch" aria-hidden="true"></span>
+          <span>Wrap Input</span>
+        </label>
       </div>
     </section>
 
@@ -703,6 +799,7 @@
   <script>
     const leftText = document.getElementById("leftText");
     const rightText = document.getElementById("rightText");
+    const inputWrapToggle = document.getElementById("inputWrapToggle");
     const leftMeta = document.getElementById("leftMeta");
     const rightMeta = document.getElementById("rightMeta");
     const leftLineNumbers = document.getElementById("leftLineNumbers");
@@ -722,13 +819,50 @@
     const jumpButtons = document.querySelectorAll("[data-jump-kind]");
     let currentRows = [];
     let lastJumpIndex = -1;
+    let measureElement;
 
     function splitLines(text) {
       return text.replace(/\r\n/g, "\n").split("\n");
     }
 
-    function buildLineNumbers(lineCount) {
-      return Array.from({ length: lineCount }, (_, index) => index + 1).join("\n");
+    function getMeasureElement() {
+      if (!measureElement) {
+        measureElement = document.createElement("div");
+        measureElement.className = "line-measure";
+        document.body.appendChild(measureElement);
+      }
+
+      return measureElement;
+    }
+
+    function getLineHeight(textarea) {
+      const styles = window.getComputedStyle(textarea);
+      const parsed = Number.parseFloat(styles.lineHeight);
+      return Number.isFinite(parsed) ? parsed : 21;
+    }
+
+    function getWrappedLineHeight(textarea, line) {
+      const styles = window.getComputedStyle(textarea);
+      const measure = getMeasureElement();
+      const contentWidth = textarea.clientWidth
+        - Number.parseFloat(styles.paddingLeft)
+        - Number.parseFloat(styles.paddingRight);
+      measure.style.width = `${Math.max(contentWidth, 0)}px`;
+      measure.style.font = styles.font;
+      measure.style.lineHeight = styles.lineHeight;
+      measure.style.letterSpacing = styles.letterSpacing;
+      measure.textContent = line || " ";
+      return Math.max(measure.scrollHeight, getLineHeight(textarea));
+    }
+
+    function buildLineNumberMarkup(textarea) {
+      const lines = splitLines(textarea.value);
+      const isWrapped = inputWrapToggle.checked;
+
+      return lines.map((line, index) => {
+        const height = isWrapped ? ` style="height: ${getWrappedLineHeight(textarea, line)}px"` : "";
+        return `<div class="line-number-row"${height}>${index + 1}</div>`;
+      }).join("");
     }
 
     function syncLineNumbers(textarea, lineNumbers) {
@@ -736,8 +870,16 @@
     }
 
     function updateEditorLineNumbers(textarea, lineNumbers) {
-      lineNumbers.textContent = buildLineNumbers(splitLines(textarea.value).length);
+      lineNumbers.innerHTML = buildLineNumberMarkup(textarea);
       syncLineNumbers(textarea, lineNumbers);
+    }
+
+    function setInputWrap(enabled) {
+      [leftText, rightText].forEach((textarea) => {
+        textarea.classList.toggle("wrap-lines", enabled);
+        textarea.setAttribute("wrap", enabled ? "soft" : "off");
+      });
+      updateMeta();
     }
 
     function updateMeta() {
@@ -1225,6 +1367,8 @@
 
     leftText.addEventListener("input", renderDiff);
     rightText.addEventListener("input", renderDiff);
+    inputWrapToggle.addEventListener("change", () => setInputWrap(inputWrapToggle.checked));
+    window.addEventListener("resize", updateMeta);
     downloadDiffButton.addEventListener("click", downloadDiff);
     previousDiffButton.addEventListener("click", () => jumpToDiff("diff", -1));
     nextDiffButton.addEventListener("click", () => jumpToDiff("diff", 1));
@@ -1238,6 +1382,7 @@
     rightText.addEventListener("scroll", () => syncLineNumbers(rightText, rightLineNumbers));
     viewModeInputs.forEach((input) => input.addEventListener("change", renderDiff));
 
+    setInputWrap(inputWrapToggle.checked);
     renderDiff();
   </script>
 </body>
