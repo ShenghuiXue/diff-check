@@ -258,7 +258,7 @@
       box-shadow: 0 1px 2px rgba(23, 33, 47, 0.08);
     }
 
-    .action-buttons {
+    .control-group {
       display: inline-flex;
       align-items: center;
       gap: 8px;
@@ -672,14 +672,16 @@
               <label for="viewSingleColumn">Single Column</label>
             </div>
           </fieldset>
-          <div class="action-buttons">
-            <button class="action-button" type="button" id="downloadDiffButton" disabled>Download Diff</button>
+          <div class="control-group" aria-label="Difference navigation">
             <button class="action-button" type="button" id="previousDiffButton" disabled>Previous Diff</button>
             <button class="action-button" type="button" id="nextDiffButton" disabled>Next Diff</button>
             <label class="filter-toggle">
               <input type="checkbox" id="hideUnchangedToggle">
               Hide Unchanged
             </label>
+          </div>
+          <div class="control-group" aria-label="Difference actions">
+            <button class="action-button" type="button" id="downloadDiffButton" disabled>Download Diff</button>
             <button class="action-button" type="button" id="expandDiffButton" aria-pressed="false" title="Expand differences">Expand</button>
           </div>
           <div class="stats">
