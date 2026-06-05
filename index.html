@@ -108,23 +108,50 @@
       font-size: 0.88rem;
     }
 
-    textarea {
+    .editor-shell {
+      display: grid;
+      grid-template-columns: minmax(48px, auto) minmax(0, 1fr);
       width: 100%;
       min-height: clamp(220px, 30vh, 460px);
       height: clamp(280px, 34vh, 520px);
       resize: vertical;
+      overflow: hidden;
       border-radius: 14px;
       border: 1px solid var(--border);
+      background: #ffffff;
+    }
+
+    .editor-shell:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(31, 95, 191, 0.12);
+    }
+
+    .line-numbers {
+      min-width: 48px;
+      padding: 16px 10px 16px 12px;
+      border-right: 1px solid #edf1f7;
+      background: #fafbfd;
+      color: var(--muted);
+      font: 14px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+      overflow: hidden;
+      text-align: right;
+      user-select: none;
+      white-space: pre;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 0;
+      height: 100%;
+      resize: none;
+      border: none;
+      border-radius: 0;
       padding: 16px;
       font: 14px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
       color: var(--text);
       background: #ffffff;
       outline: none;
-    }
-
-    textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 4px rgba(31, 95, 191, 0.12);
     }
 
     .results {
@@ -287,8 +314,8 @@
     .diff-cell {
       display: grid;
       grid-template-columns: 60px 34px minmax(0, 1fr);
-      font: 13px/1.55 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-      min-height: 44px;
+      font: 14px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      min-height: 0;
     }
 
     .diff-cell.left {
@@ -298,7 +325,7 @@
     .cell-line,
     .cell-marker,
     .cell-content {
-      padding: 10px 12px;
+      padding: 2px 12px;
       white-space: pre-wrap;
       word-break: break-word;
     }
@@ -373,7 +400,7 @@
     .unified-block {
       display: grid;
       grid-template-columns: 72px 42px minmax(0, 1fr);
-      font: 13px/1.55 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font: 14px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     }
 
     .unified-block + .unified-block {
@@ -383,7 +410,7 @@
     .unified-line,
     .unified-marker,
     .unified-content {
-      padding: 10px 12px;
+      padding: 2px 12px;
       white-space: pre-wrap;
       word-break: break-word;
     }
@@ -467,7 +494,7 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
-      textarea {
+      .editor-shell {
         height: clamp(320px, 36vh, 620px);
       }
 
@@ -494,7 +521,10 @@
           </div>
           <span class="meta" id="leftMeta">0 lines</span>
         </div>
-        <textarea id="leftText" placeholder="Paste the original text here..." aria-label="Left text input"></textarea>
+        <div class="editor-shell">
+          <div class="line-numbers" id="leftLineNumbers" aria-hidden="true">1</div>
+          <textarea id="leftText" placeholder="Paste the original text here..." aria-label="Left text input"></textarea>
+        </div>
       </div>
 
       <div class="editor-panel">
@@ -504,7 +534,10 @@
           </div>
           <span class="meta" id="rightMeta">0 lines</span>
         </div>
-        <textarea id="rightText" placeholder="Paste the updated text here..." aria-label="Right text input"></textarea>
+        <div class="editor-shell">
+          <div class="line-numbers" id="rightLineNumbers" aria-hidden="true">1</div>
+          <textarea id="rightText" placeholder="Paste the updated text here..." aria-label="Right text input"></textarea>
+        </div>
       </div>
     </section>
 
@@ -544,6 +577,8 @@
     const rightText = document.getElementById("rightText");
     const leftMeta = document.getElementById("leftMeta");
     const rightMeta = document.getElementById("rightMeta");
+    const leftLineNumbers = document.getElementById("leftLineNumbers");
+    const rightLineNumbers = document.getElementById("rightLineNumbers");
     const diffOutput = document.getElementById("diffOutput");
     const sameCount = document.getElementById("sameCount");
     const changeCount = document.getElementById("changeCount");
@@ -555,9 +590,24 @@
       return text.replace(/\r\n/g, "\n").split("\n");
     }
 
+    function buildLineNumbers(lineCount) {
+      return Array.from({ length: lineCount }, (_, index) => index + 1).join("\n");
+    }
+
+    function syncLineNumbers(textarea, lineNumbers) {
+      lineNumbers.scrollTop = textarea.scrollTop;
+    }
+
+    function updateEditorLineNumbers(textarea, lineNumbers) {
+      lineNumbers.textContent = buildLineNumbers(splitLines(textarea.value).length);
+      syncLineNumbers(textarea, lineNumbers);
+    }
+
     function updateMeta() {
       leftMeta.textContent = `${splitLines(leftText.value).length} lines`;
       rightMeta.textContent = `${splitLines(rightText.value).length} lines`;
+      updateEditorLineNumbers(leftText, leftLineNumbers);
+      updateEditorLineNumbers(rightText, rightLineNumbers);
     }
 
     function escapeHtml(value) {
@@ -930,6 +980,8 @@
 
     leftText.addEventListener("input", renderDiff);
     rightText.addEventListener("input", renderDiff);
+    leftText.addEventListener("scroll", () => syncLineNumbers(leftText, leftLineNumbers));
+    rightText.addEventListener("scroll", () => syncLineNumbers(rightText, rightLineNumbers));
     viewModeInputs.forEach((input) => input.addEventListener("change", renderDiff));
 
     renderDiff();
