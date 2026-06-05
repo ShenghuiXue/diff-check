@@ -110,7 +110,7 @@
 
     .editor-shell {
       display: grid;
-      grid-template-columns: minmax(48px, auto) minmax(0, 1fr);
+      grid-template-columns: minmax(70px, auto) minmax(0, 1fr);
       width: 100%;
       min-height: clamp(220px, 30vh, 460px);
       height: clamp(280px, 34vh, 520px);
@@ -127,8 +127,8 @@
     }
 
     .line-numbers {
-      min-width: 48px;
-      padding: 16px 10px 16px 12px;
+      min-width: 70px;
+      padding: 16px 12px;
       border-right: 1px solid #edf1f7;
       background: #fafbfd;
       color: var(--muted);
@@ -292,6 +292,53 @@
       background: #f8fafc;
     }
 
+    .filter-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #ffffff;
+      color: var(--text);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .filter-toggle input {
+      width: 15px;
+      height: 15px;
+      margin: 0;
+      accent-color: var(--accent);
+    }
+
+    .stat-button {
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+    }
+
+    .stat-button:hover:not(:disabled),
+    .stat-button:focus-visible {
+      color: var(--accent);
+      outline: none;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .stat-button:disabled {
+      color: #99a4b7;
+      cursor: not-allowed;
+      text-decoration: none;
+    }
+
     #expandDiffButton {
       border-color: var(--accent);
       background: var(--accent-soft);
@@ -380,7 +427,7 @@
 
     .diff-cell {
       display: grid;
-      grid-template-columns: 60px 34px minmax(0, 1fr);
+      grid-template-columns: 76px 34px minmax(0, 1fr);
       font: 14px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
       min-height: 0;
     }
@@ -402,6 +449,7 @@
       color: var(--muted);
       background: #fafbfd;
       border-right: 1px solid #edf1f7;
+      white-space: nowrap;
     }
 
     .cell-marker {
@@ -466,7 +514,7 @@
 
     .unified-block {
       display: grid;
-      grid-template-columns: 72px 42px minmax(0, 1fr);
+      grid-template-columns: 88px 42px minmax(0, 1fr);
       font: 14px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     }
 
@@ -487,6 +535,7 @@
       color: var(--muted);
       background: #fafbfd;
       border-right: 1px solid #edf1f7;
+      white-space: nowrap;
     }
 
     .unified-marker {
@@ -538,7 +587,7 @@
       }
 
       .diff-cell {
-        grid-template-columns: 54px 32px minmax(0, 1fr);
+        grid-template-columns: 70px 32px minmax(0, 1fr);
       }
 
       .results,
@@ -625,13 +674,19 @@
           </fieldset>
           <div class="action-buttons">
             <button class="action-button" type="button" id="downloadDiffButton" disabled>Download Diff</button>
+            <button class="action-button" type="button" id="previousDiffButton" disabled>Previous Diff</button>
+            <button class="action-button" type="button" id="nextDiffButton" disabled>Next Diff</button>
+            <label class="filter-toggle">
+              <input type="checkbox" id="hideUnchangedToggle">
+              Hide Unchanged
+            </label>
             <button class="action-button" type="button" id="expandDiffButton" aria-pressed="false" title="Expand differences">Expand</button>
           </div>
           <div class="stats">
             <span class="pill" id="sameCount">Unchanged: 0</span>
-            <span class="pill" id="changeCount">Changed: 0</span>
-            <span class="pill" id="addCount">Added: 0</span>
-            <span class="pill" id="removeCount">Removed: 0</span>
+            <button class="stat-button" type="button" id="changeCount" data-jump-kind="change" disabled>Changed: 0</button>
+            <button class="stat-button" type="button" id="addCount" data-jump-kind="add" disabled>Added: 0</button>
+            <button class="stat-button" type="button" id="removeCount" data-jump-kind="remove" disabled>Removed: 0</button>
           </div>
         </div>
       </div>
@@ -653,12 +708,18 @@
     const resultsPanel = document.getElementById("resultsPanel");
     const diffOutput = document.getElementById("diffOutput");
     const downloadDiffButton = document.getElementById("downloadDiffButton");
+    const previousDiffButton = document.getElementById("previousDiffButton");
+    const nextDiffButton = document.getElementById("nextDiffButton");
+    const hideUnchangedToggle = document.getElementById("hideUnchangedToggle");
     const expandDiffButton = document.getElementById("expandDiffButton");
     const sameCount = document.getElementById("sameCount");
     const changeCount = document.getElementById("changeCount");
     const addCount = document.getElementById("addCount");
     const removeCount = document.getElementById("removeCount");
     const viewModeInputs = document.querySelectorAll('input[name="viewMode"]');
+    const jumpButtons = document.querySelectorAll("[data-jump-kind]");
+    let currentRows = [];
+    let lastJumpIndex = -1;
 
     function splitLines(text) {
       return text.replace(/\r\n/g, "\n").split("\n");
@@ -918,7 +979,7 @@
       return rows.map((row) => {
         if (row.kind === "same") {
           return `
-            <div class="diff-row">
+            <div class="diff-row" data-diff-kind="${row.kind}" data-diff-index="${row.index}">
               ${buildCell(row.left, "same")}
               ${buildCell(row.right, "same")}
             </div>
@@ -928,7 +989,7 @@
         if (row.kind === "change") {
           const inlineDiff = buildInlineDiff(row.left.text, row.right.text);
           return `
-            <div class="diff-row">
+            <div class="diff-row" data-diff-kind="${row.kind}" data-diff-index="${row.index}">
               ${buildCell(row.left, "change-left", inlineDiff.left)}
               ${buildCell(row.right, "change-right", inlineDiff.right)}
             </div>
@@ -937,7 +998,7 @@
 
         if (row.kind === "remove") {
           return `
-            <div class="diff-row">
+            <div class="diff-row" data-diff-kind="${row.kind}" data-diff-index="${row.index}">
               ${buildCell(row.left, "remove")}
               ${buildCell(row.right, "same")}
             </div>
@@ -945,7 +1006,7 @@
         }
 
         return `
-          <div class="diff-row">
+          <div class="diff-row" data-diff-kind="${row.kind}" data-diff-index="${row.index}">
             ${buildCell(row.left, "same")}
             ${buildCell(row.right, "add")}
           </div>
@@ -957,7 +1018,7 @@
       return rows.map((row) => {
         if (row.kind === "same") {
           return `
-            <div class="unified-entry">
+            <div class="unified-entry" data-diff-kind="${row.kind}" data-diff-index="${row.index}">
               ${buildUnifiedBlock(`${row.left.line}/${row.right.line}`, " ", escapeHtml(row.left.text) || "&nbsp;", "same")}
             </div>
           `;
@@ -966,7 +1027,7 @@
         if (row.kind === "change") {
           const inlineDiff = buildInlineDiff(row.left.text, row.right.text);
           return `
-            <div class="unified-entry">
+            <div class="unified-entry" data-diff-kind="${row.kind}" data-diff-index="${row.index}">
               ${buildUnifiedBlock(row.left.line, "-", inlineDiff.left, "remove")}
               ${buildUnifiedBlock(row.right.line, "+", inlineDiff.right, "add")}
             </div>
@@ -975,14 +1036,14 @@
 
         if (row.kind === "remove") {
           return `
-            <div class="unified-entry">
+            <div class="unified-entry" data-diff-kind="${row.kind}" data-diff-index="${row.index}">
               ${buildUnifiedBlock(row.left.line, "-", escapeHtml(row.left.text) || "&nbsp;", "remove")}
             </div>
           `;
         }
 
         return `
-          <div class="unified-entry">
+          <div class="unified-entry" data-diff-kind="${row.kind}" data-diff-index="${row.index}">
             ${buildUnifiedBlock(row.right.line, "+", escapeHtml(row.right.text) || "&nbsp;", "add")}
           </div>
         `;
@@ -1003,15 +1064,21 @@
     function renderDiff() {
       updateMeta();
 
-      const rows = getDiffRows();
+      currentRows = getDiffRows().map((row, index) => ({ ...row, index }));
+      lastJumpIndex = -1;
 
-      if (!rows.length) {
+      if (!currentRows.length) {
         diffOutput.innerHTML = '<div class="empty-state">Fill both text fields to see the diff.</div>';
         downloadDiffButton.disabled = true;
+        previousDiffButton.disabled = true;
+        nextDiffButton.disabled = true;
         sameCount.textContent = "Unchanged: 0";
         changeCount.textContent = "Changed: 0";
         addCount.textContent = "Added: 0";
         removeCount.textContent = "Removed: 0";
+        changeCount.disabled = true;
+        addCount.disabled = true;
+        removeCount.disabled = true;
         return;
       }
 
@@ -1021,7 +1088,7 @@
       let added = 0;
       let removed = 0;
 
-      rows.forEach((row) => {
+      currentRows.forEach((row) => {
         if (row.kind === "same") {
           same += 1;
         } else if (row.kind === "change") {
@@ -1033,10 +1100,20 @@
         }
       });
 
+      const visibleRows = hideUnchangedToggle.checked
+        ? currentRows.filter((row) => row.kind !== "same")
+        : currentRows;
+      const hasDiffs = changed + added + removed > 0;
+      previousDiffButton.disabled = !hasDiffs;
+      nextDiffButton.disabled = !hasDiffs;
+      changeCount.disabled = changed === 0;
+      addCount.disabled = added === 0;
+      removeCount.disabled = removed === 0;
+
       const viewMode = getViewMode();
-      const markup = viewMode === "single-column"
-        ? renderSingleColumn(rows)
-        : renderTwoColumn(rows);
+      const markup = visibleRows.length
+        ? (viewMode === "single-column" ? renderSingleColumn(visibleRows) : renderTwoColumn(visibleRows))
+        : '<div class="empty-state">No differences to show.</div>';
 
       diffOutput.className = `diff-output ${viewMode}`;
       diffOutput.innerHTML = viewMode === "single-column"
@@ -1079,7 +1156,7 @@
     }
 
     function downloadDiff() {
-      const rows = getDiffRows();
+      const rows = currentRows.length ? currentRows : getDiffRows();
 
       if (!rows.length) {
         return;
@@ -1094,6 +1171,35 @@
       link.click();
       link.remove();
       URL.revokeObjectURL(link.href);
+    }
+
+    function getDiffIndexes(kind = "diff") {
+      return currentRows
+        .filter((row) => row.kind !== "same" && (kind === "diff" || row.kind === kind))
+        .map((row) => row.index);
+    }
+
+    function jumpToDiff(kind = "diff", direction = 1) {
+      const indexes = getDiffIndexes(kind);
+
+      if (!indexes.length) {
+        return;
+      }
+
+      let targetIndex;
+
+      if (direction > 0) {
+        targetIndex = indexes.find((index) => index > lastJumpIndex) ?? indexes[0];
+      } else {
+        targetIndex = [...indexes].reverse().find((index) => index < lastJumpIndex) ?? indexes[indexes.length - 1];
+      }
+
+      lastJumpIndex = targetIndex;
+      const target = diffOutput.querySelector(`[data-diff-index="${targetIndex}"]`);
+
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
     }
 
     function setExpandedDiff(isExpanded) {
@@ -1118,6 +1224,12 @@
     leftText.addEventListener("input", renderDiff);
     rightText.addEventListener("input", renderDiff);
     downloadDiffButton.addEventListener("click", downloadDiff);
+    previousDiffButton.addEventListener("click", () => jumpToDiff("diff", -1));
+    nextDiffButton.addEventListener("click", () => jumpToDiff("diff", 1));
+    hideUnchangedToggle.addEventListener("change", renderDiff);
+    jumpButtons.forEach((button) => {
+      button.addEventListener("click", () => jumpToDiff(button.dataset.jumpKind, 1));
+    });
     expandDiffButton.addEventListener("click", toggleExpandedDiff);
     document.addEventListener("keydown", handleDocumentKeydown);
     leftText.addEventListener("scroll", () => syncLineNumbers(leftText, leftLineNumbers));
